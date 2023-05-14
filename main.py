@@ -4,20 +4,21 @@ from pyvis.network import Network
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer 
 
 def dec():
+  # Declare global variables
   global data, class_name, url, qrl, headers, gpath, bpath
   
-  # Comment the declaration below store database instead of overwriting
+  # Check if a database exists, otherwise create a new one
   data = upld('> Have Database ?')
   if not data:
     data = {
         "category": {
         }
     }
-      
-  # Get the class name
+  
+  # Get the class name from the database
   class_name = list(data.keys())[0]
   
-  # Analyze sentiment
+  # Initialize variables for web scraping and sentiment analysis
   headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
   url = 'https://old.reddit.com/'
   qrl = '{}search.json?q={}&limit={}'
@@ -25,16 +26,19 @@ def dec():
   bpath = "base.json"
  
 def extract(url):
-    with requests.Session() as session:
-        response = session.get(url, headers=headers, allow_redirects=True)
-        return response.text
+  # Send a GET request to the specified URL and return the response text
+  with requests.Session() as session:
+      response = session.get(url, headers=headers, allow_redirects=True)
+      return response.text
 
 def match(para, regex):
+  # Find all matches of a regex pattern in a given paragraph
   para = re.sub(r'&\S+?;', '', para)
   matches = re.findall(regex, para)
   return matches
  
 def ijson(json_data, category, value):
+  # Update the JSON data with a new category and value
   if category in json_data:
       values = set(json_data[category])
       values.add(value)
@@ -43,6 +47,7 @@ def ijson(json_data, category, value):
       json_data[category] = [value]
 
 def catg(txt):
+  # Analyze the sentiment
   analyzer = SentimentIntensityAnalyzer()
   score = analyzer.polarity_scores(txt)
   if score['compound'] < 0.3:
@@ -54,10 +59,11 @@ def catg(txt):
   return catg
 
 def has(string, term):
+  # Check if a string contains a given term
   return any(word in string for word in term.split())
 
 def cdata(url, term):
-
+  # Extract data from Reddit URLs that contain the search term and update the JSON data
   urls = match(extract(url), r'https://old\.reddit\.com/r[^"]+')
   for i in urls:
     paras = match(extract(i), r'<p>(.*?)</p>')
@@ -71,7 +77,7 @@ def cdata(url, term):
   mek_graf()
 
 def mek_graf():
-  # Create an instance of the Network class
+  # Create a graph using the pyvis library based on the JSON data
   g = Network(directed=True)
 
   # Add the class node to the graph
@@ -89,6 +95,7 @@ def mek_graf():
           g.add_node(value, shape="box")
           # Add an edge from the label node to the value node
           g.add_edge(label, value)
+  
   # Set the physics layout of the graph
   g.barnes_hut()
   g.show_buttons(filter_=["physics"])
@@ -97,16 +104,15 @@ def mek_graf():
   g.write_html(gpath)
   
 def sho_graf():
-  # Read the HTML
+  # Read the HTML file containing the graph
   with open(gpath, 'r') as f:
     html_page = f.read()
   
-  # Render HTML
-
+  # Render the HTML file in the Streamlit app
   st.components.v1.html(html_page, width=700, height=1200, scrolling=False)
 
 def upld(desc):
-  # Upload File 
+  # Upload a file and return its content
   f = st.file_uploader(desc)
   if f is not None:
     data = f.read()
@@ -114,6 +120,7 @@ def upld(desc):
     return data
 
 def dnld(desc, fpath):
+  # Download a file
   with open(fpath, 'r') as f:
     st.download_button(f'Download {desc}', f.read(), file_name=fpath)
 
@@ -127,19 +134,14 @@ def hide_brand():
   st.markdown(footer, unsafe_allow_html=True) 
   
 def main():
-  # Title 
+  # Set the title of the Streamlit app
   st.title(':orange[Have Some Feedback]')
 
-  
   # Input Form
   with st.form("input_form"):
     term = st.text_input('', label_visibility='collapsed', placeholder="Search")
     thrs = st.text_input('', label_visibility='collapsed', placeholder="Analysis Threshold")
-    
-    # Declare Global Var
     dec()
-
-    # Submit
     st.form_submit_button("Submit")
     
   # No Input: Do nothing
