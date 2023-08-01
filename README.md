@@ -1,8 +1,5 @@
 # SpoonFeed
 
-check https://spoonfeed--riturajbasak.repl.co/
-
-
 > To run
 
 ```sh
