@@ -51,6 +51,7 @@ smmap
 sonopy
 stack-data
 streamlit
+streamlit-agraph
 tenacity
 threadpoolctl
 toml
