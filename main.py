@@ -1,175 +1,135 @@
-import json, requests, re
+import json
+import requests
+import re
 import streamlit as st
-from pyvis.network import Network
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+from streamlit_agraph import agraph, Node, Edge, Config
 
 
-def dec():
-    # Declare global variables
-    global data, class_name, url, qrl, headers, gpath, bpath
-
-    # Check if a database exists, otherwise create a new one
-    data = upld("> Have Database ?")
-    if not data:
-        data = {"category": {}}
-
-    # Get the class name from the database
-    class_name = list(data.keys())[0]
-
-    # Initialize variables for web scraping and sentiment analysis
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-    }
-    url = "https://old.reddit.com/"
-    qrl = "{}search.json?q={}&limit={}"
-    gpath = "graph.html"
-    bpath = "base.json"
+def initialize_data():
+    return (
+        {"category": {}}
+        if not upload_database("> Have Database ?")
+        else {"category": {}}
+    )
 
 
-def extract(url):
-    # Send a GET request to the specified URL and return the response text
+def fetch_html_content(url, headers):
     with requests.Session() as session:
         response = session.get(url, headers=headers, allow_redirects=True)
         return response.text
 
 
-def match(para, regex):
-    # Find all matches of a regex pattern in a given paragraph
+def find_matches_in_paragraph(para, regex):
     para = re.sub(r"&\S+?;", "", para)
-    matches = re.findall(regex, para)
-    return matches
+    return re.findall(regex, para)
 
 
-def ijson(json_data, category, value):
-    # Update the JSON data with a new category and value
-    if category in json_data:
-        values = set(json_data[category])
-        values.add(value)
-        json_data[category] = list(values)
-    else:
-        json_data[category] = [value]
+def update_json_data(json_data, category, value):
+    category_values = set(json_data[category]) if category in json_data else set()
+    category_values.add(value)
+    json_data[category] = list(category_values)
 
 
-def catg(txt):
-    # Analyze the sentiment
+def categorize_text_sentiment(txt):
     analyzer = SentimentIntensityAnalyzer()
     score = analyzer.polarity_scores(txt)
-    if score["compound"] < 0.3:
-        catg = "negative"
-    elif score["compound"] > 0.4:
-        catg = "positive"
-    else:
-        catg = "neutral"
-    return catg
+    return (
+        "negative"
+        if score["compound"] < 0.3
+        else "positive" if score["compound"] > 0.4 else "neutral"
+    )
 
 
-def has(string, term):
-    # Check if a string contains a given term
+def contains_term(string, term):
     return any(word in string for word in term.split())
 
 
-def cdata(url, term):
-    # Extract data from Reddit URLs that contain the search term and update the JSON data
-    urls = match(extract(url), r'https://old\.reddit\.com/r[^"]+')
-    for i in urls:
-        paras = match(extract(i), r"<p>(.*?)</p>")
-        for j in paras:
-            if has(j, term):
-                ijson(data[class_name], catg(j), j)
+def extract_and_update_data(data, class_name, url, term, headers):
+    bpath = "base.json"
+    urls = find_matches_in_paragraph(
+        fetch_html_content(url, headers), r'https://old\.reddit\.com/r[^"]+'
+    )
 
-    # Save the updated JSON back to the file
+    for i in urls:
+        paras = find_matches_in_paragraph(
+            fetch_html_content(i, headers), r"<p>(.*?)</p>"
+        )
+        for j in paras:
+            if contains_term(j, term):
+                update_json_data(data[class_name], categorize_text_sentiment(j), j)
+
     with open(bpath, "w") as f:
         json.dump(data, f)
-    mek_graf()
 
 
-def mek_graf():
-    # Create a graph using the pyvis library based on the JSON data
-    g = Network(directed=True)
+def create_graph(data, class_name):
+    nodes = [Node(id=class_name, label=class_name, size=50, color="pink")]
+    edges = []
 
-    # Add the class node to the graph
-    g.add_node(class_name, size=50, color="pink")
-
-    # Iterate through the labels and add nodes and edges
     labels = data[class_name]
     for label, values in labels.items():
-        # Add the label as a node
-        g.add_node(label, size=30, color="violet")
-        # Add an edge from the class node to the label node
-        g.add_edge(class_name, label)
+        nodes.append(Node(id=label, label=label, size=30, color="violet"))
+        edges.append(Edge(source=class_name, target=label))
+
         for value in values:
-            # Add the value as a node
-            g.add_node(value, shape="box")
-            # Add an edge from the label node to the value node
-            g.add_edge(label, value)
+            nodes.append(Node(id=value, label=value, shape="box"))
+            edges.append(Edge(source=label, target=value))
 
-    # Set the physics layout of the graph
-    g.barnes_hut()
-    g.show_buttons(filter_=["physics"])
-
-    # Save the graph as HTML
-    g.write_html(gpath)
+    config = Config(
+        width="", height=600, directed=True, physics=True, hierarchical=False
+    )
+    agraph_widget_key = "agraph_" + class_name
+    st.write(agraph(nodes=nodes, edges=edges, config=config), key=agraph_widget_key)
 
 
-def sho_graf():
-    # Read the HTML file containing the graph
-    with open(gpath, "r") as f:
-        html_page = f.read()
-
-    # Render the HTML file in the Streamlit app
-    st.components.v1.html(html_page, height=1080, scrolling=False)
-
-
-def upld(desc):
-    # Upload a file and return its content
-    f = st.file_uploader(desc)
+def upload_database(description):
+    f = st.file_uploader(description)
     if f is not None:
-        data = f.read()
         st.write("File uploaded successfully!")
-        return data
+        return f.read()
+    return None
 
 
-def dnld(desc, fpath):
-    # Download a file
-    with open(fpath, "r") as f:
-        st.download_button(f"Download {desc}", f.read(), file_name=fpath)
+def download_file(description, file_path, content):
+    with open(file_path, "w") as f:
+        f.write(content)
+    st.download_button(f"Download {description}", content, file_name=file_path)
 
 
-def hide_brand():
-    # Hide Streamlit Branding
-    footer = """
-              <style>
-              footer {visibility: hidden;}
-              </style>
-              """
+def hide_streamlit_branding():
+    footer = """<style> footer {visibility: hidden;} </style>"""
     st.markdown(footer, unsafe_allow_html=True)
 
 
+def get_search_link(url, term, threshold):
+    return "{}search.json?q={}&limit={}".format(url, term, threshold)
+
+
 def main():
-    # Set screen layout
     st.set_page_config(layout="wide")
-    # Set the title of the Streamlit app
     st.title(":orange[Have Some Feedback]")
 
-    # Input Form
     with st.form("input_form"):
         term = st.text_input("", label_visibility="collapsed", placeholder="Search")
-        thrs = st.text_input(
+        threshold = st.text_input(
             "", label_visibility="collapsed", placeholder="Analysis Threshold"
         )
-        dec()
+        data = initialize_data()
         st.form_submit_button("Submit")
 
-    # No Input: Do nothing
     if term:
-        link = qrl.format(url, term, thrs)
-        cdata(link, term)
-        sho_graf()
-        dnld("Graph", gpath)
-        dnld("Database", bpath)
+        url = "https://old.reddit.com/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+        }
+        search_link = get_search_link(url, term, threshold)
+        extract_and_update_data(data, list(data.keys())[0], search_link, term, headers)
+        create_graph(data, list(data.keys())[0])
+        download_file("Database", "base.json", json.dumps(data))
+
     st.write("> [Source Code](https://codeberg.org/zz/SpoonFeed)")
 
 
-# Run the app
 if __name__ == "__main__":
     main()
